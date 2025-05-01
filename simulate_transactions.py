@@ -32,7 +32,7 @@ class TransactionSimulator:
     def get_random_amount(self, user_balance: float) -> float:
         """Generate a random transaction amount based on user balance"""
         max_amount: float = min(float(user_balance) * 0.9, 50_000)
-        if max_amount < 10: return 0
+        if max_amount < 10: return 1000
         min_amount: int = 10
         return round(random.uniform(min_amount, max_amount), 2)
 
@@ -40,6 +40,7 @@ class TransactionSimulator:
         """Select a transaction type based on weighted probabilities"""
         index = random.choices(range(len(TRANSACTION_TYPES)), weights=[w for _, w, _ in TRANSACTION_TYPES])[0]
         return TRANSACTION_TYPES[index][0], TRANSACTION_TYPES[index][2]
+
     def process_transaction(self, user_id: int, transaction_type: str, amount: float, description: str, recipient_id: Optional[int] = None, user_name: Optional[str] = None, user_phone: Optional['str'] = None) -> bool:
         """Process a transaction and update user balances"""
         try:

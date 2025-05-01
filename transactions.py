@@ -6,7 +6,7 @@ class Transaction:
     def __init__(self, amount: int, type_: str, date: str = None, description: str = ''):
         self.amount = amount
         self.type = type_  # E.g Deposit, Withdrawal, Send, Recieve, Pochi-la-biashara, lipa-na-mpesa
-        self.date = date if date else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        self.date = date
         self.description = description
 
     def __repr__(self):
@@ -38,3 +38,7 @@ class TransactionLinkedList:
         while current:
             print(current.transaction)
             current = current.next
+
+
+if __name__ == '__main__':
+    trans = TransactionLinkedList()

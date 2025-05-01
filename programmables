@@ -1,0 +1,12 @@
+-------------SUGGESSTIONS---------------------
+1. Create a transaction charge.
+2. Create a linked list that shows a history of the transactions when you input a name.
+3. Create a graph that connects users.
+4. Handle the front end ui.
+
+
+
+
+-------------ISSUES TO FIX---------------------
+1. Some transactions are generating Ksh 0.
+2. Receive transaction type should be removed since it acts as the send transaction type.

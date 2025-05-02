@@ -1,12 +1,12 @@
 import mysql.connector
 
 
-def create_connection():
+def create_connection(database='mpesa_sim'):
     return mysql.connector.connect(
         host='localhost',
         user='root',
         password='1998',
-        database='mpesa_sim',
+        database=database,
     )
 
 

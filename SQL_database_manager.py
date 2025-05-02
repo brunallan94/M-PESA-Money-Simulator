@@ -1,19 +1,11 @@
-import mysql.connector
+from database_connector import create_connection
 
 
 class Sql_commands:
     def __init__(self) -> None:
-        self.conn = self.create()
+        self.conn = create_connection(database=None)
         self.cursor = self.conn.cursor()
 
-    def create(self) -> None:
-        connection = mysql.connector.connect(
-            host = 'localhost',
-            user = 'root',
-            password = '1998'
-        )
-
-        return connection
 
     ''' The function create the sql database based on the created schema'''
     def run_sql_file(self, file_path):

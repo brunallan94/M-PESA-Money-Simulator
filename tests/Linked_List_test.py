@@ -46,7 +46,7 @@ class LinkedList:
             count += 1
             cur_node = cur_node.next
 
-        print(f"The total amount of users is {count}{'\n'}")
+        print(f"The total amount of users is {count}{'\n'} ")
 
 
 def main() -> None:

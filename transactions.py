@@ -1,3 +1,5 @@
+import mysql.connector
+
 from database_connector import create_connection
 from typing import List
 
@@ -50,19 +52,28 @@ class LinkedList:
 
 
 def main() -> None:
-    connection = create_connection()
-    cursor = connection.cursor(dictionary=False)
+    try:
+        connection = create_connection()
+        cursor = connection.cursor(dictionary=False)
 
-    cursor.execute("SELECT u.full_name, u.phone_number, u.balance, u.place_of_birth, t.transaction_type, t.amount, t.description "
-                   "FROM users u "
-                   "INNER JOIN transactions t ON u.id = t.user_id "
-                   "WHERE balance < 100")
-    data = cursor.fetchall()
+        cursor.execute("SELECT u.full_name, u.phone_number, u.balance, u.place_of_birth, t.transaction_type, t.amount, t.description "
+                       "FROM users u "
+                       "INNER JOIN transactions t ON u.id = t.user_id "
+                       "WHERE balance < 100")
+        data = cursor.fetchall()
 
-    linked_list = LinkedList()
-    linked_list.create_linkedlist(data)
-    linked_list.count_data()
-    linked_list.display()
+        linked_list = LinkedList()
+        linked_list.create_linkedlist(data)
+        linked_list.count_data()
+        linked_list.display()
+
+    except mysql.connector.Error as e:
+        print(f'Error: {e}')
+
+    finally:
+        if connection and connection.is_connected():
+            cursor.close()
+            connection.close()
 
 
 if __name__ == '__main__':

@@ -1,12 +1,19 @@
 -------------SUGGESSTIONS---------------------
-1. Create a transaction charge.
-2. Create a linked list that shows a history of the transactions when you input a name.
+1.
+2. Create a linked list that shows a history of the transactions when you input a name in transactions.py
 3. Create a graph that connects users.
 4. Handle the front end ui.
-
+5. Fraud Detection (Uses Graph)
+6. Fake accounts Detections (Used Graph)
+7. Churn prediction (This is the process of identifying customers who are likely to stop using a company products or services in the near future)
+8. Loan default risk.
+9. User segmentation. (e.g; User segments help you identify who your customers are, while user personas help you understand why they behave the way they do.)
+10. Graph embeddings.
 
 
 
 -------------ISSUES TO FIX---------------------
 1. Some transactions are generating Ksh 0.
-2. Receive transaction type should be removed since it acts as the send transaction type.
+2. M-Pesa Doesn't allow withdrawal of less than Ksh 50.
+3. Create a system that handles retrials of retrieval of data from api if internet fails or unknown error.
+4. Fix the issue with python garbage collector colliding with mysql close connection in del method for simulate_transactions.py

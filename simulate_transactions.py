@@ -6,14 +6,13 @@ from typing import List, Tuple, Optional
 
 # Transaction types with their probabilities and descriptions
 TRANSACTION_TYPES = [
-    ('deposit', 0.15, "Cash deposit from agent"),
-    ('withdrawal', 0.15, "Cash withdrawal from agent"),
-    ('send', 0.25, "Money sent to another user"),
-    ('receive', 0.25, "Money received from another user"),
-    ('airtime', 0.10, "Airtime purchase"),
-    ('lipa na mpesa', 0.05, "Lipa Na MPESA payment"),
-    ('paybill', 0.04, "Paybill payment"),
-    ('pochi la biashara', 0.01, "Pochi La Biashara deposit")
+    ('deposit', 0.2, "Cash deposit from agent"),
+    ('withdrawal', 0.2, "Cash withdrawal from agent"),
+    ('send', 0.3333, "Money sent to another user"),
+    ('airtime', 0.13333, "Airtime purchase"),
+    ('lipa na mpesa', 0.0667, "Lipa Na MPESA payment"),
+    ('paybill', 0.0533, "Paybill payment"),
+    ('pochi la biashara', 0.0133, "Pochi La Biashara deposit")
 ]
 
 
@@ -41,7 +40,37 @@ class TransactionSimulator:
         index = random.choices(range(len(TRANSACTION_TYPES)), weights=[w for _, w, _ in TRANSACTION_TYPES])[0]
         return TRANSACTION_TYPES[index][0], TRANSACTION_TYPES[index][2]
 
-    def process_transaction(self, user_id: int, transaction_type: str, amount: float, description: str, recipient_id: Optional[int] = None, user_name: Optional[str] = None, user_phone: Optional['str'] = None) -> bool:
+    def calculate_mpesa_charges(self, amount: float, transaction_type: str) -> int:
+        send_pochi_till_charges = {'1-49': 0, '50-100': 0, '101-500': 7, '501-1000': 13, '1001-1500': 23,
+                                   '1501-2500': 33, '2501-3500': 53, '3501-5000': 57, '5001-7500': 78, '7501-10000': 90,
+                                   '10001-15000': 100, '15001-20000': 105, '20001-35000': 108, '35001-50000': 108,
+                                   '50001-250000': 108}
+
+        withdraw_charges = {'1-49': 0, '50-100': 11, '101-500': 29, '501-1000': 29, '1001-1500': 29, '1501-2500': 29,
+                            '2501-3500': 52, '3501-5000': 69, '5001-7500': 87, '7501-10000': 115, '10001-15000': 167,
+                            '15001-20000': 185, '20001-35000': 197, '35001-50000': 278, '50001-250000': 309}
+
+        charged_amount = 0
+        charge_map = {}
+
+        if transaction_type in ['paybill', 'pochi la biashara', 'send']: charge_map = send_pochi_till_charges
+
+        elif transaction_type == 'withdrawal': charge_map = withdraw_charges
+
+        else: charged_amount = 0
+
+        for key, val in charge_map.items():
+            lower, upper = map(int, key.split('-'))
+
+            if lower <= amount <= upper:
+                charged_amount = val
+                break
+
+        return charged_amount
+
+    def process_transaction(self, user_id: int, transaction_type: str, amount: float, description: str,
+                            recipient_id: Optional[int] = None, user_name: Optional[str] = None,
+                            user_phone: Optional['str'] = None) -> bool:
         """Process a transaction and update user balances"""
         try:
             # Start transaction
@@ -52,8 +81,21 @@ class TransactionSimulator:
             self.cursor.execute("SELECT balance FROM users WHERE id = %s FOR UPDATE", (user_id,))
             sender_balance: float = self.cursor.fetchone()['balance']
 
+            # Cut the transaction charge based on the transaction type
+            # The reason why charge is equal to amount in airtime is because when one buys airtime the money goes to the company
+            if transaction_type == 'airtime': charge: float = amount
+            else:
+                charge: float = self.calculate_mpesa_charges(amount, transaction_type)
+                amount: float = charge + amount
+
+            # Record the transaction to the company revenue database
+            self.cursor.execute(
+                "INSERT INTO company_revenue (user_id, transaction_type, charge, amount)"
+                "VALUES (%s, %s, %s, %s)",
+                (user_id, transaction_type, charge, amount))
+
             # Handle different transaction types
-            if transaction_type in ['withdrawal', 'send', 'airtime', 'lipa na mpesa', 'paybill', 'pochi la biashara', 'receive']:
+            if transaction_type in ['withdrawal', 'send', 'airtime', 'lipa na mpesa', 'paybill', 'pochi la biashara']:
                 if sender_balance < amount:
                     raise ValueError("Insufficient funds")
 
@@ -65,7 +107,8 @@ class TransactionSimulator:
                     self.cursor.execute("SELECT balance FROM users WHERE id = %s FOR UPDATE", (recipient_id,))
                     recipient_balance = self.cursor.fetchone()['balance']
 
-                    self.cursor.execute("UPDATE users SET balance = %s WHERE id = %s", (float(recipient_balance) + amount, recipient_id))
+                    self.cursor.execute("UPDATE users SET balance = %s WHERE id = %s",
+                                        (float(recipient_balance) + amount, recipient_id))
 
                     # Record the receive transaction for recipient
                     self.cursor.execute(
@@ -98,15 +141,16 @@ class TransactionSimulator:
         # Get 1-2 random users (2 for send transactions)
         transaction_type, description = self.select_transaction_type()
 
-        if transaction_type in ['send', 'pochi la biashara', 'receive']:
+        if transaction_type in ['send', 'pochi la biashara']:
             users = self.get_random_users(2)
-            if len(users) < 2: return # Ensures we get the required 2 users for functionality of the function
+            if len(users) < 2: return  # Ensures we get the required 2 users for functionality of the function
 
             sender, recipient = users
             amount: float = self.get_random_amount(sender['balance'])
             description: str = f"Sent to {recipient['full_name']} {recipient['phone_number']}"
 
-            self.process_transaction(sender['id'], transaction_type, amount, description, recipient['id'], sender['full_name'], sender['phone_number'])
+            self.process_transaction(sender['id'], transaction_type, amount, description, recipient['id'],
+                                     sender['full_name'], sender['phone_number'])
         else:
             user = self.get_random_users(1)[0]
             amount: float = self.get_random_amount(user['balance'])
@@ -145,8 +189,12 @@ class TransactionSimulator:
 
 
 def transaction_charges():
-    send_pochi_till_charges = {'1-49': 0, '50-100': 0, '101-500': 7, '501-1000': 13, '1001-1500': 23, '1501-2500': 33, '2501-3500': 53, '3501-5000': 57, '5001-7500': 78, '7501-10000': 90, '10001-15000': 100, '15001-20000': 105, '20001-35000': 108, '35001-50000': 108, '50001-250000': 108}
-    withdraw_charges = {'50-100': 11, '101-500': 29, '501-1000': 29, '1001-1500': 29, '1501-2500': 29, '2501-3500': 52, '3501-5000': 69, '5001-7500': 87, '7501-10000': 115, '10001-15000': 167, '15001-20000': 185, '20001-35000': 197, '35001-50000': 278, '50001-250000': 309}
+    send_pochi_till_charges = {'1-49': 0, '50-100': 0, '101-500': 7, '501-1000': 13, '1001-1500': 23, '1501-2500': 33,
+                               '2501-3500': 53, '3501-5000': 57, '5001-7500': 78, '7501-10000': 90, '10001-15000': 100,
+                               '15001-20000': 105, '20001-35000': 108, '35001-50000': 108, '50001-250000': 108}
+    withdraw_charges = {'50-100': 11, '101-500': 29, '501-1000': 29, '1001-1500': 29, '1501-2500': 29, '2501-3500': 52,
+                        '3501-5000': 69, '5001-7500': 87, '7501-10000': 115, '10001-15000': 167, '15001-20000': 185,
+                        '20001-35000': 197, '35001-50000': 278, '50001-250000': 309}
 
 
 if __name__ == '__main__':

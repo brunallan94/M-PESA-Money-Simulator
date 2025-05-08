@@ -37,3 +37,13 @@ CREATE TABLE IF NOT EXISTS user_groups (
     group_name VARCHAR(100),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
+
+-- Company Revenue table
+CREATE TABLE IF NOT EXISTS company_revenue (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT,
+    transaction_type VARCHAR(50) NOT NULL,
+    charge DECIMAL(10, 2),
+    amount DECIMAL(10, 2),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);

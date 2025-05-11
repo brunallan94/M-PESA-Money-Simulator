@@ -10,9 +10,9 @@ TRANSACTION_TYPES = [
     ('withdrawal', 0.2, "Cash withdrawal from agent"),
     ('send', 0.3333, "Money sent to another user"),
     ('airtime', 0.13333, "Airtime purchase"),
-    ('lipa na mpesa', 0.0667, "Lipa Na MPESA payment"),
+    ('lipa na mpesa', 0.0567, "Lipa Na MPESA payment"),
     ('paybill', 0.0533, "Paybill payment"),
-    ('pochi la biashara', 0.0133, "Pochi La Biashara deposit")
+    ('pochi la biashara', 0.0233, "Pochi La Biashara deposit")
 ]
 
 
@@ -39,6 +39,9 @@ class TransactionSimulator:
         """Select a transaction type based on weighted probabilities"""
         index = random.choices(range(len(TRANSACTION_TYPES)), weights=[w for _, w, _ in TRANSACTION_TYPES])[0]
         return TRANSACTION_TYPES[index][0], TRANSACTION_TYPES[index][2]
+
+    def get_random_date(self, start: None, end: None):
+        pass
 
     def calculate_mpesa_charges(self, amount: float, transaction_type: str) -> int:
         send_pochi_till_charges = {'1-49': 0, '50-100': 0, '101-500': 7, '501-1000': 13, '1001-1500': 23,
@@ -136,6 +139,7 @@ class TransactionSimulator:
             print(f"Transaction failed: {e}")
             return False
 
+
     def generate_random_transaction(self) -> None:
         """Generate and process a random transaction"""
         # Get 1-2 random users (2 for send transactions)
@@ -182,21 +186,13 @@ class TransactionSimulator:
 
         print(f"Simulation complete. Processed {transaction_count} transactions in {self.duration_minutes} minutes.")
 
-    def __del__(self):
-        """Clean up database connections"""
-        self.cursor.close()
-        self.connection.close()
-
-
-def transaction_charges():
-    send_pochi_till_charges = {'1-49': 0, '50-100': 0, '101-500': 7, '501-1000': 13, '1001-1500': 23, '1501-2500': 33,
-                               '2501-3500': 53, '3501-5000': 57, '5001-7500': 78, '7501-10000': 90, '10001-15000': 100,
-                               '15001-20000': 105, '20001-35000': 108, '35001-50000': 108, '50001-250000': 108}
-    withdraw_charges = {'50-100': 11, '101-500': 29, '501-1000': 29, '1001-1500': 29, '1501-2500': 29, '2501-3500': 52,
-                        '3501-5000': 69, '5001-7500': 87, '7501-10000': 115, '10001-15000': 167, '15001-20000': 185,
-                        '20001-35000': 197, '35001-50000': 278, '50001-250000': 309}
+    def end_database_connection(self):
+        if self.connection and self.connection.is_connected():
+            self.cursor.close()
+            self.connection.close()
 
 
 if __name__ == '__main__':
-    simulator = TransactionSimulator(duration_minutes=30, max_transactions=1000)
+    simulator = TransactionSimulator(duration_minutes=120, max_transactions=2000)
     simulator.run_simulation()
+    simulator.end_database_connection()

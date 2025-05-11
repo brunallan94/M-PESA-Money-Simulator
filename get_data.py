@@ -1,3 +1,5 @@
+import threading
+from concurrent.futures import ThreadPoolExecutor
 import time
 import requests
 from typing import List, Set
@@ -12,35 +14,23 @@ import sys
 
 
 class User:
-    def __init__(self, name, phone_number, gender, dob, age, balance, place_of_birth, account_created_on, pin) -> None:
-        self.name = name
-        self.phone_number = phone_number
-        self.gender = gender
-        self.dob = dob
-        self.age = age
-        self.balance = balance
-        self.place_of_birth = place_of_birth
-        self.account_created_on = account_created_on
-        self.pin = f'{pin:04d}'
-        self.hashed_pin = self._hash_pin(self.pin)
-
-    def _hash_pin(self, pin) -> str:
-        return hashlib.sha256(str(pin).encode()).hexdigest()
+    def __init__(self, users_to_insert) -> None:
+        self.users_to_insert = users_to_insert
 
     def __repr__(self) -> str:
-        return f'{self.name} | Phone: {self.phone_number} | Balance: KES {int(self.balance):,} | Town: {self.place_of_birth}'
+        name, phone, gender, dob, age, balance, place_of_birth, account_created, pin, hashed_pin = self.users_to_insert
+        return f'{name} | Phone: {phone} | Balance: KES {int(balance):,} | Town: {place_of_birth}'
 
     def import_to_sql(self, connection):
         cursor = connection.cursor()
 
         try:
-            cursor.execute('INSERT INTO users (full_name, phone_number, gender, dob, age, balance, place_of_birth, account_created_on, pin, hashed_pin)'
-                           'VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)',
-                           (self.name, self.phone_number, self.gender, self.dob, self.age, self.balance, self.place_of_birth, self.account_created_on, self.pin, self.hashed_pin))
+            cursor.executemany(''' INSERT INTO users (full_name, phone_number, gender, dob, age, balance, place_of_birth, account_created_on, pin, hashed_pin) 
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ''', self.users_to_insert)
             connection.commit()
 
         except Exception as e:
-            print(f'Error inserting user {self.name}: {e}')
+            print(f'Error inserting user: {e}')
 
         finally:
             cursor.close()
@@ -74,23 +64,58 @@ def generate_unique_phone(existing_numbers: Set[str]) -> str:
             return number
 
 
-def process_batch(batch_size: int, batch_num: int, existing_no: Set[str], connection) -> None:
+def fetch_phone_numbers_in_database(connection):
+    cursor = connection.cursor()
+    cursor.execute("SELECT phone_number FROM users")
+    results = {row[0] for row in cursor.fetchall()}
+    cursor.close()
+    return results
+
+
+def fetch_with_retry(url: str, retries: int = 3, backoff: int = 5) -> requests.Response:
+    headers = {'User-Agent': 'M-PESA Money Simulator/1.0'}
+
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            return response
+
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 429:
+                wait = backoff * (attempt +1)
+                tqdm.write(f"[Retry {attempt +1}] Rate limited. Retrying in {wait} seconds.....")
+                time.sleep(wait)
+
+            else:
+                tqdm.write(f"HTTP Error: {e}")
+                break
+
+        except requests.exceptions.RequestException as e:
+            tqdm.write(f"Requests failed: {e}")
+            time.sleep(backoff)
+
+    raise RuntimeError('Max retries exceeded for API request.')
+
+
+def process_batch(batch_size: int, batch_num: int, existing_no: Set[str], lock: threading.Lock, api_delay) -> None:
     link: str = f'https://randomuser.me/api/?results={batch_size}'
     kenyan_towns = load_kenyan_towns()
+    connection = create_connection()
+    users_to_insert = []
 
     try:
-        response = requests.get(link)
-        response.raise_for_status()
+        response = fetch_with_retry(link)
         res = response.json()['results']
 
     except requests.exceptions.RequestException as e:
-        print(f'Error fetching user data: {e}')
+        print(f'Error fetching user data in batch {batch_num +1}: {e}')
         return
 
     for i, data in enumerate(tqdm(res, desc=f'Downloading batch number: {batch_num +1}', leave=False, ncols=75), start=1):
         try:
             full_name: str = f"{data['name']['title']} {data['name']['first']} {data['name']['last']}"  # Name
-            number: str = generate_unique_phone(existing_no)  # Phone number
+            with lock: number: str = generate_unique_phone(existing_no)  # Phone number. The lock ensures no 2 threads assign the same phone number.
             gender: str = data['gender']  # Gender
             dob: str = data['dob']['date'][:10]  # Date of Birth
             age: int = data['dob']['age']  # Age
@@ -98,33 +123,48 @@ def process_batch(batch_size: int, batch_num: int, existing_no: Set[str], connec
             balance: str = re.sub(r'[^\d]', '', raw_balance) or '0'  # Mpesa Balance
             place: str = random.choice(kenyan_towns)  # Place of Birth
             pin = int(data['location']['street']['number']) % 10000  # Mpesa pin
+            hashed_pin = hashlib.sha256(str(pin).encode()).hexdigest()
             account_created_on = data['registered']['date'][:10]  # Date of account Mpesa account creation/registration
 
-            user: User = User(full_name, number, gender, dob, age, balance, place, account_created_on, pin)
-            user.import_to_sql(connection)
-            # tqdm.write(str(user))
-            # tqdm.write(f'Hashed PIN: {user.hashed_pin}')
-            # tqdm.write('_' * 60)
+            users_to_insert.append((full_name, number, gender, dob, age, balance, place, account_created_on, pin, hashed_pin))
 
         except Exception as e:
-            tqdm.write(f'Error processing user: {i} -> {e}')
+            tqdm.write(f'Error processing user: {i} in batch {batch_num +1} -> {e}')
             continue
+
+    if users_to_insert:
+        user = User(users_to_insert)
+        user.import_to_sql(connection)
+
+    connection.close()
+    time.sleep(api_delay)
 
 
 def main_get_data():
     """The random user api has a limit of 5000"""
-    api_delay: int = 2
+    connection = create_connection()
+    api_delay: int = random.randint(1, 3)
     total_users_required: int = 100_000
-    batch_size: int = 5_000
-    num_batches: int = total_users_required // batch_size
-    used_numbers: Set[str] = set()
-    connection = create_connection()  # Create database connection
+    max_api_batch_size: int = 600
+    used_numbers: Set[str] = fetch_phone_numbers_in_database(connection)
+    used_numbers_lock = threading.Lock()
+    max_concurrent_requests: int = 1
+    connection.close()
 
-    for batch_num in tqdm(range(num_batches), desc='Overall Progress', ncols=80):
-        process_batch(batch_size, batch_num, used_numbers, connection)
-        time.sleep(api_delay)
+    batch_sizes: List[int] = []
+    remaining = total_users_required
+    while remaining > 0:
+        batch_sizes.append(min(max_api_batch_size, remaining))
+        remaining -= batch_sizes[-1]
 
-    connection.close()  # Close database connection
+    with ThreadPoolExecutor(max_workers=max_concurrent_requests) as executor:
+        futures = []
+
+        for batch_num, batch_size in enumerate(batch_sizes):
+            futures.append(executor.submit(process_batch, batch_size, batch_num, used_numbers, used_numbers_lock, api_delay))
+
+        for f in tqdm(futures, desc='Overall Progress', ncols=80):
+            f.result()
 
 
 if __name__ == '__main__':
